@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
 import { Readable } from 'stream';
+import { PrismaService } from 'src/prisma/prisma.service';
 interface GroqResponse {
   choices: {
     message: {
@@ -24,6 +25,7 @@ export class LlmService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly prismaService: PrismaService,
   ) {}
   async askLlm(prompt: string): Promise<{ reply: string }> {
     try {
@@ -78,5 +80,72 @@ export class LlmService {
       ),
     );
     return response.data as Readable;
+  }
+  async chatWithHistory(conversationId: string | null, prompt: string) {
+    let convoId = conversationId;
+
+    if (!convoId) {
+      const newConversation = await this.prismaService.conversation.create({
+        data: {},
+      });
+      convoId = newConversation.id;
+    }
+    const messages = await this.prismaService.message.findMany({
+      where: { conversationId: convoId },
+      orderBy: { createdAt: 'asc' },
+    });
+    const groqMessages = messages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+    groqMessages.push({ role: 'user', content: prompt });
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<GroqResponse>(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            model: 'llama-3.3-70b-versatile',
+            messages: groqMessages,
+            max_tokens: 100,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${this.configService.get('GROQ_API_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+      await this.prismaService.message.create({
+        data: {
+          conversationId: convoId,
+          role: 'user',
+          content: prompt,
+        },
+      });
+      await this.prismaService.message.create({
+        data: {
+          conversationId: convoId,
+          role: 'assistant',
+          content: response.data.choices[0].message.content,
+        },
+      });
+      return {
+        conversationId: convoId,
+        reply: response.data.choices[0].message.content,
+      };
+    } catch (error) {
+      if (axios.isAxiosError<GroqErrorResponse>(error)) {
+        const status =
+          error.response?.status ?? HttpStatus.INTERNAL_SERVER_ERROR;
+        const message =
+          error.response?.data?.error?.message ?? 'LLM request failed';
+        throw new HttpException(message, status);
+      }
+      throw new HttpException(
+        'Unexpected error',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
