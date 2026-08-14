@@ -20,6 +20,9 @@ interface GroqErrorResponse {
     code: string;
   };
 }
+export interface SentimentResult {
+  sentiment: string;
+}
 @Injectable()
 export class LlmService {
   constructor(
@@ -134,6 +137,51 @@ export class LlmService {
         conversationId: convoId,
         reply: response.data.choices[0].message.content,
       };
+    } catch (error) {
+      if (axios.isAxiosError<GroqErrorResponse>(error)) {
+        const status =
+          error.response?.status ?? HttpStatus.INTERNAL_SERVER_ERROR;
+        const message =
+          error.response?.data?.error?.message ?? 'LLM request failed';
+        throw new HttpException(message, status);
+      }
+      throw new HttpException(
+        'Unexpected error',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+  async extractStructuredData(text: string): Promise<SentimentResult> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<GroqResponse>(
+          'https://api.groq.com/openai/v1/chat/completions',
+          {
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Extract sentiment from the text. Respond only in JSON with a single key "sentiment".',
+              },
+              { role: 'user', content: text },
+            ],
+
+            response_format: {
+              type: 'json_object',
+            },
+            max_tokens: 100,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${this.configService.get('GROQ_API_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+      const content = response.data.choices[0].message.content;
+      return JSON.parse(content) as { sentiment: string };
     } catch (error) {
       if (axios.isAxiosError<GroqErrorResponse>(error)) {
         const status =

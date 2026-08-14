@@ -64,4 +64,9 @@ export class LlmController {
   ) {
     return this.llmService.chatWithHistory(conversationId, prompt);
   }
+
+  @Post('extract-sentiment')
+  async extractSentiment(@Body('text') text: string) {
+    return this.llmService.extractStructuredData(text);
+  }
 }
