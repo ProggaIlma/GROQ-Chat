@@ -56,4 +56,12 @@ export class LlmController {
       });
     });
   }
+
+  @Post('chat')
+  async chatWithHistory(
+    @Body('conversationId') conversationId: string | null,
+    @Body('prompt') prompt: string,
+  ) {
+    return this.llmService.chatWithHistory(conversationId, prompt);
+  }
 }
