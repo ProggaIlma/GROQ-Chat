@@ -29,3 +29,10 @@ model Message {
  conversation Conversation @relation(fields: [conversationId], references: [id])
 
 }
+
+model DocumentChunk {
+  id        String   @id @default(uuid())
+  content   String
+  embedding Unsupported("vector(1024)")?
+  createdAt DateTime @default(now())
+}
