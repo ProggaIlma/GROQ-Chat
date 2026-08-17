@@ -7,5 +7,6 @@ import { PrismaModule } from 'src/prisma/prisma.module';
   imports: [HttpModule, PrismaModule],
   providers: [EmbeddingService],
   controllers: [EmbeddingController],
+  exports: [EmbeddingService],
 })
 export class EmbeddingModule {}

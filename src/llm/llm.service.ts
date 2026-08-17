@@ -6,6 +6,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import axios from 'axios';
 import { Readable } from 'stream';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { EmbeddingService } from 'src/embedding/embedding.service';
 interface GroqResponse {
   choices: {
     message: {
@@ -29,6 +30,7 @@ export class LlmService {
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
+    private readonly embeddingService: EmbeddingService,
   ) {}
   async askLlm(prompt: string): Promise<{ reply: string }> {
     try {
@@ -97,10 +99,21 @@ export class LlmService {
       where: { conversationId: convoId },
       orderBy: { createdAt: 'asc' },
     });
-    const groqMessages = messages.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }));
+    const releventChunks =
+      await this.embeddingService.searchSimilarChunks(prompt);
+    const context = releventChunks.map((x) => x.content).join('\n');
+    const systemMsg = {
+      role: 'system',
+      content: `you are a helpful assistent. Use the following context if relevant to answer the user's question:\n${context}`,
+    };
+
+    const groqMessages = [
+      systemMsg,
+      ...messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      })),
+    ];
     groqMessages.push({ role: 'user', content: prompt });
     try {
       const response = await firstValueFrom(
